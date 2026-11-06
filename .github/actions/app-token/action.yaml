@@ -1,0 +1,66 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: App Token
+description: >-
+  Generate a GitHub App installation token. Validates the App's private key
+  and normalizes it to PKCS#8 before calling create-github-app-token, which
+  only accepts PKCS#8 even though GitHub App keys may be downloaded as
+  PKCS#1.
+
+inputs:
+  client-id:
+    description: GitHub App ID
+    required: true
+  private-key:
+    description: GitHub App private key (PEM, PKCS#1 or PKCS#8)
+    required: true
+  permission-contents:
+    description: Contents permission for the token
+    required: false
+    default: ""
+  permission-pull-requests:
+    description: Pull requests permission for the token
+    required: false
+    default: ""
+
+outputs:
+  token:
+    description: Installation access token
+    value: ${{ steps.token.outputs.token }}
+  installation-id:
+    description: Installation ID
+    value: ${{ steps.token.outputs.installation-id }}
+  app-slug:
+    description: App slug
+    value: ${{ steps.token.outputs.app-slug }}
+
+runs:
+  using: composite
+  steps:
+    - name: Normalize Private Key
+      id: key
+      env:
+        KEY: ${{ inputs.private-key }}
+      run: |
+        # Keys are often stored on a single line with literal \n; unescape.
+        NL=$'\n'
+        KEY="${KEY//\\n/$NL}"
+
+        # Fail fast with a clear error if the key is malformed, and
+        # normalize to PKCS#8 (create-github-app-token rejects PKCS#1).
+        # The key itself is never printed.
+        printf '%s' "$KEY" | openssl pkey -in /dev/stdin -noout
+        {
+          echo 'key<<__PEM_END__'
+          printf '%s' "$KEY" | openssl pkcs8 -in /dev/stdin -topk8 -nocrypt
+          echo '__PEM_END__'
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Generate Token
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      id: token
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ steps.key.outputs.key }}
+        permission-contents: ${{ inputs.permission-contents }}
+        permission-pull-requests: ${{ inputs.permission-pull-requests }}
