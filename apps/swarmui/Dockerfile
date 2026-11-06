@@ -31,6 +31,10 @@ RUN \
 
 EXPOSE 7001
 
-ENTRYPOINT ["bash", "/SwarmUI/launchtools/docker-standard-inner.sh", "fixperms"]
+# No arguments: the launch script starts the app directly. (Older versions
+# accepted a "fixperms" token; since ~0.9.x it rejects unknown arguments, and
+# the one-shot permission fix is now "fixch <uid>". Build-time chown above
+# already owns /SwarmUI to ${UID}.)
+ENTRYPOINT ["bash", "/SwarmUI/launchtools/docker-standard-inner.sh"]
 
 LABEL org.opencontainers.image.source="https://github.com/mcmonkeyprojects/SwarmUI"
