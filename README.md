@@ -20,9 +20,9 @@ Each image lives in `apps/<name>/` and consists of:
 When a push to `main` changes anything under `apps/**`, the
 `Release` workflow builds every changed app:
 
-1. **plan** — checks whether the package already exists on GHCR, reads
-   `VERSION`/`SOURCE`/platforms from `docker-bake.hcl`, normalizes the
-   version, and computes tags (`x.y.z`, `x.y`, `x`, raw version, `rolling`).
+1. **plan** — reads `VERSION`/`SOURCE`/platforms from `docker-bake.hcl`,
+   normalizes the version, and computes tags (`x.y.z`, `x.y`, `x`, raw
+   version, `rolling`).
 2. **build** — one job per platform. Builds with Buildx using registry layer
    caching (`ghcr.io/cbc02009/build_cache:<app>-<arch>`), pushes per-platform
    images by digest, and (for PRs only) runs the app's Go tests against a
@@ -31,8 +31,6 @@ When a push to `main` changes anything under `apps/**`, the
    all computed tags.
 4. **attest** — uploads an SBOM and pushes a SLSA provenance attestation to
    the registry, then verifies it.
-5. **announce** — when a brand-new app is published for the first time, a
-   GitHub Release is created announcing it.
 
 ### Pull requests
 
@@ -58,8 +56,8 @@ new release build automatically.
    `# renovate:` annotation pointing at the upstream release source).
 2. Optionally add `container_test.go` (use the helpers in `tests/helpers.go`;
    see `AGENTS.md` for conventions).
-3. Commit and push to `main` — the image is built, published as
-   `ghcr.io/cbc02009/<name>`, and a GitHub Release announcing it is created.
+3. Commit and push to `main` — the image is built and published as
+   `ghcr.io/cbc02009/<name>`.
 
 ## Local development
 
@@ -82,7 +80,7 @@ mise install          # installs go, docker buildx deps, droast, zizmor, lefthoo
 
 | Secret               | Used by      | Notes                                                             |
 | -------------------- | ------------ | ----------------------------------------------------------------- |
-| `BOT_APP_ID`    | Renovate, Release | GitHub App ID (the App needs Contents + Pull Requests: read/write and must be installed on this account). |
-| `BOT_APP_PRIVATE_KEY`| Renovate, Release | GitHub App private key (PEM, PKCS#8).                                |
+| `BOT_APP_ID`          | Renovate        | GitHub App ID (the App needs Contents + Pull Requests: read/write and must be installed on this account). |
+| `BOT_APP_PRIVATE_KEY` | Renovate        | GitHub App private key (PEM; PKCS#1 or PKCS#8, normalized automatically). |
 
 No other secrets are required: GHCR pushes use the built-in `GITHUB_TOKEN`.

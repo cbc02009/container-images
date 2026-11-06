@@ -18,11 +18,6 @@ on:
         type: boolean
         description: Release
         required: true
-    secrets:
-      BOT_APP_ID:
-        required: false
-      BOT_APP_PRIVATE_KEY:
-        required: false
 
 concurrency:
   group: ${{ inputs.release && format('app-builder-{0}', inputs.app) || format('app-builder-{0}-{1}', inputs.app, github.run_id) }}
@@ -36,19 +31,12 @@ jobs:
     name: Plan
     runs-on: ubuntu-26.04
     outputs:
-      app-exists: ${{ steps.app-exists.outputs.exists }}
       platforms: ${{ steps.app-options.outputs.platforms }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Check For Existing App
-        uses: $/.github/actions/app-exists
-        id: app-exists
-        with:
-          app: ${{ inputs.app }}
 
       - name: Get App Options
         uses: $/.github/actions/app-options
@@ -285,55 +273,3 @@ jobs:
         run: |
           gh attestation verify --repo "$REPO" "oci://ghcr.io/${REPO_OWNER}/${APP}@${DIGEST}"
 
-  announce:
-    # TEMP (one-time validation): normally only announce when the app is new;
-    # temporarily run on every release to validate the bot token end-to-end.
-    if: ${{ inputs.release }}
-    name: Announce
-    needs:
-      - plan
-      - attest
-    runs-on: ubuntu-26.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Generate Token
-        uses: $/.github/actions/app-token
-        id: app-token
-        with:
-          client-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
-          permission-contents: write
-
-      - name: Get App Options
-        uses: $/.github/actions/app-options
-        id: app-options
-        with:
-          app: ${{ inputs.app }}
-
-      - name: Get Release Tag
-        uses: $/.github/actions/release-tag
-        id: release
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Create Release
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          APP: ${{ inputs.app }}
-          SOURCE: ${{ steps.app-options.outputs.source }}
-        run: |
-          cat > release-notes.md <<EOF
-          > [!NOTE]
-          > A new app has been added.
-
-          ## 📦 App
-
-          **Name**: [${APP}](https://github.com/${{ github.repository }}/pkgs/container/${APP})
-          **Source**: <${SOURCE}>
-          EOF
-          gh release create "$TAG" --notes-file release-notes.md
