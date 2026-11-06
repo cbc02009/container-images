@@ -1,0 +1,11 @@
+[pre-commit.droast]
+glob = ["**/Dockerfile"]
+run = "droast {staged_files}"
+
+[pre-commit.gofmt]
+glob = ["**/*.go"]
+run = "gofmt -s -w {staged_files}"
+
+[pre-commit.shellcheck]
+glob = ["**/*.sh"]
+run = "shellcheck {staged_files}"

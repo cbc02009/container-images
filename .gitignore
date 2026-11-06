@@ -1,0 +1,5 @@
+.cache
+.claude
+.private
+docker-bake.json
+node_modules

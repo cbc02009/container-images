@@ -1,0 +1,47 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended"],
+  schedule: ["at any time"],
+  customManagers: [
+    {
+      customType: "regex",
+      description: "Process Annotations in Docker Bake",
+      managerFilePatterns: ["/(^|/)docker-bake\\.hcl$/"],
+      matchStrings: [
+        'datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( versioning=(?<versioning>\\S+))?\\n.+ = "(?<currentValue>[^"]+)"',
+      ],
+      datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+      versioningTemplate: "{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}",
+    },
+  ],
+  packageRules: [
+    {
+      description: ["Release Rules for App Updates"],
+      addLabels: ["app/{{parentDir}}"],
+      additionalBranchPrefix: "{{parentDir}}-",
+      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
+      commitMessageTopic: "{{depName}}",
+      matchFileNames: ["**/docker-bake.hcl", "**/Dockerfile"],
+      semanticCommitScope: "{{parentDir}}",
+      semanticCommitType: "release",
+    },
+    {
+      description: ["Auto-merge App Updates"],
+      matchFileNames: ["**/docker-bake.hcl"],
+      automerge: true,
+      ignoreTests: false,
+    },
+    {
+      description: ["Allow prerelease versions for app updates"],
+      matchFileNames: ["apps/**"],
+      ignorePrereleases: false,
+    },
+    {
+      description: ["Allowed .NET SDK Version for Base Images"],
+      matchDatasources: ["docker"],
+      matchFileNames: ["**/Dockerfile"],
+      matchPackageNames: ["mcr.microsoft.com/dotnet/sdk"],
+      allowedVersions: "/^9\\.0-/",
+    },
+  ],
+}

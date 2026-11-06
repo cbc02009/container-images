@@ -1,0 +1,36 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: App Tests
+description: Takes an app and image then runs tests
+
+inputs:
+  app:
+    description: App Name
+    required: true
+  image:
+    description: Image
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.1.0
+      with:
+        go-version-file: go.mod
+
+    - name: Restore Go Modules
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+
+    - name: Run Tests
+      shell: bash
+      env:
+        APP: ${{ inputs.app }}
+        TEST_IMAGE: ${{ inputs.image }}
+      run: |
+        go test -count=1 -v ./apps/${APP}/...

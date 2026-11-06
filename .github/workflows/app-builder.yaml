@@ -1,0 +1,337 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: App Builder
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        type: string
+        description: App Name
+        required: true
+      no-cache:
+        type: boolean
+        description: No Cache
+        required: false
+        default: false
+      release:
+        type: boolean
+        description: Release
+        required: true
+    secrets:
+      BOT_CLIENT_ID:
+        required: false
+      BOT_APP_PRIVATE_KEY:
+        required: false
+
+concurrency:
+  group: ${{ inputs.release && format('app-builder-{0}', inputs.app) || format('app-builder-{0}-{1}', inputs.app, github.run_id) }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-26.04
+    outputs:
+      app-exists: ${{ steps.app-exists.outputs.exists }}
+      platforms: ${{ steps.app-options.outputs.platforms }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check For Existing App
+        uses: $/.github/actions/app-exists
+        id: app-exists
+        with:
+          app: ${{ inputs.app }}
+
+      - name: Get App Options
+        uses: $/.github/actions/app-options
+        id: app-options
+        with:
+          app: ${{ inputs.app }}
+
+      - name: Get App Versions
+        uses: $/.github/actions/app-versions
+        id: app-versions
+        with:
+          upstream-version: ${{ steps.app-options.outputs.version }}
+
+      - name: Build App Metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          flavor: latest=false
+          images: |
+            ghcr.io/${{ github.repository_owner }}/${{ inputs.app }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.app-versions.outputs.semantic }},enable=${{ steps.app-versions.outputs.is-valid-semver && inputs.release }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.app-versions.outputs.semantic }},enable=${{ steps.app-versions.outputs.is-valid-semver && inputs.release }}
+            type=semver,pattern={{major}},value=${{ steps.app-versions.outputs.semantic }},enable=${{ steps.app-versions.outputs.is-valid-semver && inputs.release }}
+            type=raw,value=${{ steps.app-versions.outputs.raw }},enable=${{ steps.app-versions.outputs.is-valid-semver && inputs.release }}
+            type=raw,value=rolling,enable=${{ inputs.release }}
+            type=raw,value=sandbox,enable=${{ ! inputs.release }}
+
+      - name: Upload Bake Metadata
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.app }}-bake-metadata
+          path: ${{ steps.meta.outputs.bake-file }}
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs:
+      - plan
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJson(needs.plan.outputs.platforms) }}
+    runs-on: ${{ startsWith(matrix.platform, 'linux/arm') && 'ubuntu-26.04-arm' || 'ubuntu-26.04' }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      APP: ${{ inputs.app }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Get Target Architecture
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: target
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        with:
+          script: |
+            core.setOutput('arch', process.env.PLATFORM.split('/').pop());
+
+      - name: Get App Options
+        uses: $/.github/actions/app-options
+        id: app-options
+        with:
+          app: ${{ inputs.app }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Download Bake Metadata
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.app }}-bake-metadata
+          path: ${{ runner.temp }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build App
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        id: bake
+        with:
+          files: |
+            ./docker-bake.hcl
+            cwd://${{ runner.temp }}/docker-metadata-action-bake.json
+          set: |
+            *.args.VENDOR=${{ github.repository_owner }}
+            *.cache-from=${{ format('type=registry,ref=ghcr.io/{0}/build_cache:{1}-{2},mode=max', github.repository_owner, inputs.app, steps.target.outputs.arch) }}
+            *.cache-to=${{ inputs.release && format('type=registry,ref=ghcr.io/{0}/build_cache:{1}-{2},mode=max,compression=zstd,force-compression=true', github.repository_owner, inputs.app, steps.target.outputs.arch) || '' }}
+            *.labels.org.opencontainers.image.title=${{ inputs.app }}
+            *.labels.org.opencontainers.image.url=https://ghcr.io/${{ github.repository_owner }}/${{ inputs.app }}
+            *.labels.org.opencontainers.image.version=${{ steps.app-options.outputs.version }}
+            *.labels.org.opencontainers.image.revision=${{ github.sha }}
+            *.labels.org.opencontainers.image.vendor=${{ github.repository_owner }}
+            *.no-cache=${{ inputs.no-cache }}
+            *.output=${{ inputs.release && format('type=image,name=ghcr.io/{0}/{1},push-by-digest=true,name-canonical=true,push=true,compression=zstd,force-compression=true', github.repository_owner, inputs.app) || 'type=docker' }}
+            *.platform=${{ matrix.platform }}
+            *.tags=${{ ! inputs.release && format('ghcr.io/{0}/{1}:sandbox', github.repository_owner, inputs.app) || '' }}
+          source: ./apps/${{ inputs.app }}
+          targets: image
+
+      - name: Export Digest
+        if: ${{ inputs.release }}
+        env:
+          METADATA: ${{ steps.bake.outputs.metadata }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          DIGEST=$(jq -r '.image["containerimage.digest"]' <<< "$METADATA")
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload Digest
+        if: ${{ inputs.release }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.app }}-digests-${{ steps.target.outputs.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Run App Tests
+        if: ${{ ! inputs.release }}
+        uses: $/.github/actions/app-tests
+        with:
+          app: ${{ inputs.app }}
+          image: ghcr.io/${{ github.repository_owner }}/${{ inputs.app }}:sandbox
+
+  merge:
+    if: ${{ inputs.release }}
+    name: Merge
+    runs-on: ubuntu-26.04
+    needs:
+      - build
+    permissions:
+      contents: read
+      packages: write
+    env:
+      APP: ${{ inputs.app }}
+      REPO_OWNER: ${{ github.repository_owner }}
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - name: Download Bake Metadata
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.app }}-bake-metadata
+          path: ${{ runner.temp }}
+
+      - name: Download Digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: ${{ inputs.app }}-digests-*
+          merge-multiple: true
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Create Manifest List and Push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          IMAGE="ghcr.io/${REPO_OWNER}/${APP}"
+          docker buildx imagetools create \
+              $(jq --raw-output --compact-output --arg image "$IMAGE" '.target."docker-metadata-action".tags | map(select(startswith($image)) | "-t " + .) | join(" ")' "${RUNNER_TEMP}/docker-metadata-action-bake.json") \
+              $(printf "${IMAGE}@sha256:%s " *)
+
+      - name: Inspect Image
+        run: |
+          TAG=$(jq --raw-output '.target."docker-metadata-action".args.DOCKER_META_VERSION' "${RUNNER_TEMP}/docker-metadata-action-bake.json")
+          docker buildx imagetools inspect "ghcr.io/${REPO_OWNER}/${APP}:${TAG}"
+
+      - name: Export Digest
+        id: digest
+        run: |
+          TAG=$(jq --raw-output '.target."docker-metadata-action".args.DOCKER_META_VERSION' "${RUNNER_TEMP}/docker-metadata-action-bake.json")
+          DIGEST=$(docker buildx imagetools inspect "ghcr.io/${REPO_OWNER}/${APP}:${TAG}" --format '{{ json . }}' | jq --raw-output '.manifest.digest')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  attest:
+    if: ${{ inputs.release }}
+    name: Attest
+    needs:
+      - merge
+    runs-on: ubuntu-26.04
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+    env:
+      APP: ${{ inputs.app }}
+      REPO_OWNER: ${{ github.repository_owner }}
+      DIGEST: ${{ needs.merge.outputs.digest }}
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Upload Dependency Snapshot
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          dependency-snapshot: true
+          image: ghcr.io/${{ github.repository_owner }}/${{ inputs.app }}@${{ needs.merge.outputs.digest }}
+
+      - name: Attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          push-to-registry: true
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.app }}
+          subject-digest: ${{ needs.merge.outputs.digest }}
+
+      - name: Verify Attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh attestation verify --repo "$REPO" "oci://ghcr.io/${REPO_OWNER}/${APP}@${DIGEST}"
+
+  announce:
+    if: ${{ inputs.release && needs.plan.outputs.app-exists != 'true' }}
+    name: Announce
+    needs:
+      - plan
+      - attest
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Generate Token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Get App Options
+        uses: $/.github/actions/app-options
+        id: app-options
+        with:
+          app: ${{ inputs.app }}
+
+      - name: Get Release Tag
+        uses: $/.github/actions/release-tag
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          APP: ${{ inputs.app }}
+          SOURCE: ${{ steps.app-options.outputs.source }}
+        run: |
+          cat > release-notes.md <<EOF
+          > [!NOTE]
+          > A new app has been added.
+
+          ## 📦 App
+
+          **Name**: [${APP}](https://github.com/${{ github.repository }}/pkgs/container/${APP})
+          **Source**: <${SOURCE}>
+          EOF
+          gh release create "$TAG" --notes-file release-notes.md

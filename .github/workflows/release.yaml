@@ -1,0 +1,126 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/**
+      - "!apps/**/*_test.go"
+  workflow_dispatch:
+    inputs:
+      app:
+        type: string
+        description: App Name
+        required: true
+      release:
+        type: boolean
+        description: Release
+        required: false
+        default: false
+      no-cache:
+        type: boolean
+        description: No Cache
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      changed-files: ${{ steps.changed-files.outputs.all_changed_files }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Get Changed Files
+        uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
+        id: changed-files
+        with:
+          dir_names: true
+          dir_names_exclude_current_dir: true
+          dir_names_max_depth: 1
+          escape_json: false
+          json: true
+          path: apps
+
+  changed:
+    if: ${{ needs.prepare.outputs.changed-files != '[]' || github.event_name == 'workflow_dispatch' }}
+    name: Get Changed Apps
+    needs:
+      - prepare
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      apps: ${{ steps.apps.outputs.apps }}
+    steps:
+      - name: Get Apps
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: apps
+        env:
+          APPS: ${{ github.event_name == 'workflow_dispatch' && inputs.app || join(fromJSON(needs.prepare.outputs.changed-files), ' ') }}
+        with:
+          script: |
+            const { APPS } = process.env;
+            const appsToBuild = APPS.split(' ').filter(Boolean);
+            core.setOutput('apps', JSON.stringify(appsToBuild));
+            console.log('apps:', JSON.stringify(appsToBuild, null, 2));
+            core.summary.addHeading('Apps to build:').addList(appsToBuild).write();
+
+  build:
+    if: ${{ needs.changed.outputs.apps != '[]' }}
+    name: Build ${{ matrix.app }}
+    needs:
+      - changed
+    uses: $/.github/workflows/app-builder.yaml
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+    secrets:
+      BOT_CLIENT_ID: ${{ secrets.BOT_CLIENT_ID }}
+      BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+    strategy:
+      matrix:
+        app: ${{ fromJSON(needs.changed.outputs.apps) }}
+      fail-fast: false
+      max-parallel: 4
+    with:
+      app: ${{ matrix.app }}
+      no-cache: ${{ github.event_name == 'workflow_dispatch' && inputs.no-cache }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release || github.event_name == 'push' }}
+
+  status:
+    if: ${{ !cancelled() }}
+    name: Build Success
+    needs:
+      - build
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      # cancelled counts as failed: !cancelled() above still runs this job when
+      # individual needs were cancelled but the run was not, and a required job
+      # that never reached a verdict must not clear the merge gate.
+      - name: Any jobs failed?
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          exit 1
+
+      - name: All jobs passed or skipped?
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: |
+          echo "All jobs passed or skipped" && echo "${{ toJSON(needs.*.result) }}"
