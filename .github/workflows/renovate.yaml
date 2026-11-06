@@ -48,7 +48,7 @@ jobs:
         id: app-token
         with:
           client-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_SECRET }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
 

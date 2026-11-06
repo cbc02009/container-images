@@ -21,7 +21,7 @@ on:
     secrets:
       BOT_APP_ID:
         required: false
-      BOT_APP_SECRET:
+      BOT_APP_PRIVATE_KEY:
         required: false
 
 concurrency:
@@ -286,7 +286,9 @@ jobs:
           gh attestation verify --repo "$REPO" "oci://ghcr.io/${REPO_OWNER}/${APP}@${DIGEST}"
 
   announce:
-    if: ${{ inputs.release && needs.plan.outputs.app-exists != 'true' }}
+    # TEMP (one-time validation): normally only announce when the app is new;
+    # temporarily run on every release to validate the bot token end-to-end.
+    if: ${{ inputs.release }}
     name: Announce
     needs:
       - plan
@@ -303,7 +305,7 @@ jobs:
         id: app-token
         with:
           client-id: ${{ secrets.BOT_APP_ID }}
-          private-key: ${{ secrets.BOT_APP_SECRET }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           permission-contents: write
 
       - name: Get App Options

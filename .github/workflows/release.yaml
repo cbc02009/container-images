@@ -110,7 +110,7 @@ jobs:
       packages: write
     secrets:
       BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
-      BOT_APP_SECRET: ${{ secrets.BOT_APP_SECRET }}
+      BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
     strategy:
       matrix:
         app: ${{ fromJSON(needs.changed.outputs.apps) }}
