@@ -56,7 +56,6 @@ jobs:
           path: apps
 
   changed:
-    if: ${{ needs.prepare.outputs.changed-files != '[]' || github.event_name == 'workflow_dispatch' }}
     name: Get Changed Apps
     needs:
       - prepare
@@ -70,11 +69,21 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: apps
         env:
-          APPS: ${{ github.event_name == 'workflow_dispatch' && inputs.app || join(fromJSON(needs.prepare.outputs.changed-files), ' ') }}
+          APPS: ${{ github.event_name == 'workflow_dispatch' && inputs.app || join(fromJSON(needs.prepare.outputs.changed-files || '[]'), ' ') }}
         with:
           script: |
             const { APPS } = process.env;
-            const appsToBuild = APPS.split(' ').filter(Boolean);
+            const fs = require('fs');
+            let appsToBuild = APPS.split(' ').filter(Boolean);
+            if (appsToBuild.length === 0) {
+              // On an initial push the changed-files action exits early for the
+              // first commit and produces no output, so fall back to scanning
+              // the apps/ directory.
+              console.log('No changed apps reported; scanning apps/ directory');
+              appsToBuild = fs.existsSync('apps')
+                ? fs.readdirSync('apps', { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+                : [];
+            }
             core.setOutput('apps', JSON.stringify(appsToBuild));
             console.log('apps:', JSON.stringify(appsToBuild, null, 2));
             core.summary.addHeading('Apps to build:').addList(appsToBuild).write();
