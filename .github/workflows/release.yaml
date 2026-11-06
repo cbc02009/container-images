@@ -67,6 +67,11 @@ jobs:
     outputs:
       apps: ${{ steps.apps.outputs.apps }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Get Apps
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: apps
@@ -78,9 +83,10 @@ jobs:
             const fs = require('fs');
             let appsToBuild = APPS.split(' ').filter(Boolean);
             if (appsToBuild.length === 0) {
-              // On an initial push the changed-files action exits early for the
-              // first commit and produces no output, so fall back to scanning
-              // the apps/ directory.
+              // No apps changed: either this is the repository's first push
+              // (the changed-files action exits early without output) or only
+              // pipeline files changed. In both cases, build everything under
+              // apps/ so the change is validated against a real build.
               console.log('No changed apps reported; scanning apps/ directory');
               appsToBuild = fs.existsSync('apps')
                 ? fs.readdirSync('apps', { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
@@ -103,8 +109,8 @@ jobs:
       id-token: write
       packages: write
     secrets:
-      BOT_CLIENT_ID: ${{ secrets.BOT_CLIENT_ID }}
-      BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+      BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
+      BOT_APP_SECRET: ${{ secrets.BOT_APP_SECRET }}
     strategy:
       matrix:
         app: ${{ fromJSON(needs.changed.outputs.apps) }}

@@ -19,9 +19,9 @@ on:
         description: Release
         required: true
     secrets:
-      BOT_CLIENT_ID:
+      BOT_APP_ID:
         required: false
-      BOT_APP_PRIVATE_KEY:
+      BOT_APP_SECRET:
         required: false
 
 concurrency:
@@ -302,8 +302,8 @@ jobs:
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app-token
         with:
-          client-id: ${{ secrets.BOT_CLIENT_ID }}
-          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_SECRET }}
           permission-contents: write
 
       - name: Get App Options

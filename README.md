@@ -82,7 +82,7 @@ mise install          # installs go, docker buildx deps, droast, zizmor, lefthoo
 
 | Secret               | Used by      | Notes                                                             |
 | -------------------- | ------------ | ----------------------------------------------------------------- |
-| `BOT_CLIENT_ID`      | Renovate, Release | GitHub App client ID (App needs Contents + Pull Requests: read/write). |
-| `BOT_APP_PRIVATE_KEY`| Renovate, Release | GitHub App private key (PEM).                                    |
+| `BOT_APP_ID`    | Renovate, Release | GitHub App ID (the App needs Contents + Pull Requests: read/write and must be installed on this account). |
+| `BOT_APP_SECRET`| Renovate, Release | GitHub App private key (PEM).                                    |
 
 No other secrets are required: GHCR pushes use the built-in `GITHUB_TOKEN`.
