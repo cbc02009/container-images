@@ -27,6 +27,11 @@ those images via `testcontainers-go`.
 
 - `testify/require`, not `assert`: a failed image test should stop
   immediately rather than cascade into a second, confusing failure.
+- `run:` steps inside composite actions (`runs: using: composite`) must
+  declare `shell:` explicitly — unlike workflow steps they inherit no
+  default, and the runner fails the whole job at setup time otherwise
+  (the local linters do not catch it; check new/edited actions against
+  this before committing).
 - Every helper takes `t *testing.T` first, calls `t.Helper()`, and registers
   cleanup via `testcontainers.CleanupContainer(t, c)`; never leak a container
   past the test.
