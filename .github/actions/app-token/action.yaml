@@ -39,6 +39,7 @@ runs:
   steps:
     - name: Normalize Private Key
       id: key
+      shell: bash
       env:
         KEY: ${{ inputs.private-key }}
       run: |
