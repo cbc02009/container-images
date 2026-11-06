@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 
+# SwarmUI (https://github.com/mcmonkeyprojects/SwarmUI) — a self-hosted
+# Stable Diffusion Web UI, built from source at a tagged release and served
+# on port 7001.
+
 # renovate: datasource=docker depName=mcr.microsoft.com/dotnet/sdk
 FROM mcr.microsoft.com/dotnet/sdk:9.0-bookworm-slim
 
