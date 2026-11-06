@@ -9,6 +9,8 @@ on:
     paths:
       - apps/**
       - "!apps/**/*_test.go"
+      - .github/workflows/release.yaml
+      - .github/workflows/app-builder.yaml
   workflow_dispatch:
     inputs:
       app:
