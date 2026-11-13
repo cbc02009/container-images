@@ -9,8 +9,9 @@
 # `TypeError: 'NoneType' object is not an iterator` → APIConnectionError 500
 # (and, via the proxy router, a model failover). The COPY below adds the
 # override, delegating to the Anthropic ModelResponseIterator — the same
-# pattern OpenCodeGoGeminiChatConfig uses for the Gemini route. Drop this
-# overlay once the fix ships upstream.
+# pattern OpenCodeGoGeminiChatConfig uses for the Gemini route. Tracked
+# upstream at https://github.com/BerriAI/litellm/issues/51666 — drop this
+# overlay once a release ships that fix.
 
 ARG VERSION=v1.109.0-rc.1
 
