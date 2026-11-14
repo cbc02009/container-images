@@ -33,7 +33,7 @@ ARG LENS_REF
 RUN git clone --depth 1 --branch "${LENS_REF}" https://github.com/BerriAI/lens.git /src
 
 FROM scratch AS lens-src
-COPY --from=source /src /
+COPY --from=source /src /src
 
 FROM ${LENS_UI_BUILD_IMAGE} AS ui-builder
 WORKDIR /src
