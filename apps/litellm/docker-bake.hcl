@@ -6,7 +6,7 @@ variable "APP" {
 
 variable "VERSION" {
   // renovate: datasource=docker depName=ghcr.io/berriai/litellm
-  default = "v1.109.0-rc.1"
+  default = "v1.109.1"
 }
 
 variable "SOURCE" {

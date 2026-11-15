@@ -26,6 +26,31 @@ if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging
 
 
+# Go's OpenAI-compatible endpoint strict-validates per-message fields and 400s
+# with `unsupported_parameter: messages[N].<key>`; litellm's drop_params only
+# strips top-level request params, so fields nested inside message objects
+# must be removed here. Add a key to this tuple whenever a new 400 names one.
+_GO_STRIP_MESSAGE_KEYS: Final = ("reasoning", "reasoning_content")
+
+
+def _strip_reasoning_fields(
+    messages: Sequence[AllMessageValues],
+) -> list[AllMessageValues]:
+    cleaned: list[AllMessageValues] = []
+    for message in messages:
+        if not isinstance(message, Mapping):
+            cleaned.append(message)
+            continue
+        if any(key in message for key in _GO_STRIP_MESSAGE_KEYS):
+            patched: dict[object, object] = dict(message)
+            for key in _GO_STRIP_MESSAGE_KEYS:
+                patched.pop(key, None)
+            cleaned.append(patched)  # type: ignore[arg-type]
+        else:
+            cleaned.append(message)
+    return cleaned
+
+
 class _GoReportedCostMixin:
     """Record usage.opencode.list_cost so response_cost reflects OpenCode's price, not the static rows."""
 
@@ -69,6 +94,24 @@ class OpenCodeGoChatConfig(_GoReportedCostMixin, OpenAILikeChatConfig):
     @property
     def custom_llm_provider(self) -> str:
         return "opencode_go"
+
+    def transform_request(
+        self,
+        model: str,
+        messages: Sequence[AllMessageValues],
+        optional_params: Mapping[str, object],
+        litellm_params: Mapping[str, object],
+        headers: Mapping[str, object],
+    ) -> dict[str, object]:  # mutable-ok: protocol handlers mutate the returned request and headers
+        return TypeAdapter(dict[str, object]).validate_python(
+            super().transform_request(
+                model,
+                _strip_reasoning_fields(messages),
+                optional_params,
+                litellm_params,
+                headers,
+            )
+        )
 
     def _get_openai_compatible_provider_info(
         self,

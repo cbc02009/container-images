@@ -6,13 +6,15 @@ import (
 	helpers "github.com/cbc02009/container-images/tests"
 )
 
-// The image is an overlay on the upstream LiteLLM image carrying the
-// opencode_go /v1/messages streaming fix: OpenCodeGoMessagesChatConfig must
-// define get_model_response_iterator_for_request itself (the inherited
-// BaseConfig stub returns None, which kills OpenAI-wire streaming to
-// /v1/messages Go models with 'NoneType' object is not an iterator).
+// The image is an overlay on the upstream LiteLLM image carrying two
+// opencode_go fixes: (1) OpenCodeGoMessagesChatConfig must define
+// get_model_response_iterator_for_request itself (the inherited BaseConfig
+// stub returns None, which kills OpenAI-wire streaming to /v1/messages Go
+// models with 'NoneType' object is not an iterator); (2) OpenCodeGoChatConfig
+// must strip per-message reasoning fields, which Go's /v1/chat/completions
+// endpoint rejects with 400 unsupported_parameter.
 func TestLitellm(t *testing.T) {
-	image := helpers.GetTestImage("litellm:v1.109.0-rc.1")
+	image := helpers.GetTestImage("litellm:v1.109.1")
 
 	// The patched provider module replaced the stock one in the venv.
 	helpers.RequireFileExists(
@@ -34,5 +36,26 @@ assert "get_model_response_iterator_for_request" in OpenCodeGoMessagesChatConfig
 iterator = ModelResponseIterator(streaming_response=iter([]), sync_stream=True)
 assert callable(iterator.__iter__) and callable(iterator.__aiter__)
 print("override present")
+`)
+
+	// The OpenAI-wire config must forward messages without the per-message
+	// reasoning fields that Go's /v1/chat/completions endpoint rejects.
+	helpers.RequireCommandSucceeds(t, image, nil, "/app/.venv/bin/python", "-c", `
+from litellm.llms.opencode.chat.transformation import OpenCodeGoChatConfig
+
+body = OpenCodeGoChatConfig().transform_request(
+    model="opencode_go/beam-free",
+    messages=[
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "ok", "reasoning": "chain-of-thought", "reasoning_content": "deep"},
+        {"role": "user", "content": "again"},
+    ],
+    optional_params={"max_tokens": 100},
+    litellm_params={"api_key": "sk-test"},
+    headers={},
+)
+assert all("reasoning" not in m and "reasoning_content" not in m for m in body["messages"])
+assert body["messages"][1]["content"] == "ok"
+print("reasoning stripped")
 `)
 }
