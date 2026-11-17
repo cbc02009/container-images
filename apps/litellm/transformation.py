@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Final
 
@@ -49,6 +50,28 @@ def _strip_reasoning_fields(
         else:
             cleaned.append(message)
     return cleaned
+
+
+# Go requires a session header on every request (routing/cache bucketing) and
+# answers 400 missing_session_id without one. Upstream attaches the header only
+# when the caller supplied a session id (x-litellm-session-id, metadata), so
+# headerless callers — ad-hoc probes, one-shot scripts — fail outright. The
+# wrapper below synthesizes a throwaway id for those, using the same oneshot-
+# prefix convention the Hermes agent uses for its fallback sessions; callers
+# that do establish a session are untouched.
+_GO_SESSION_HEADER: Final = "x-opencode-session"
+
+
+def _go_headers_with_session(
+    headers: Mapping[str, object],
+    litellm_params: Mapping[str, object],
+    api_key: str | None,
+    model: str | None = None,
+) -> dict[str, object]:  # mutable-ok: protocol handlers mutate the returned request and headers
+    final_headers: Final = go_headers(headers, litellm_params, api_key, model)
+    if not any(str(key).lower() == _GO_SESSION_HEADER for key in final_headers):
+        final_headers[_GO_SESSION_HEADER] = f"oneshot-{uuid.uuid4()}"
+    return final_headers
 
 
 class _GoReportedCostMixin:
@@ -130,7 +153,7 @@ class OpenCodeGoChatConfig(_GoReportedCostMixin, OpenAILikeChatConfig):
         api_key: str | None = None,
         api_base: str | None = None,
     ) -> dict[str, object]:  # mutable-ok: protocol handlers mutate the returned request and headers
-        return go_headers(headers, litellm_params, api_key, model)
+        return _go_headers_with_session(headers, litellm_params, api_key, model)
 
     def get_models(
         self, api_key: str | None = None, api_base: str | None = None
@@ -176,7 +199,7 @@ class OpenCodeGoMessagesChatConfig(_GoReportedCostMixin, AnthropicConfig):
         api_key: str | None = None,
         api_base: str | None = None,
     ) -> dict[str, object]:  # mutable-ok: protocol handlers mutate the returned request and headers
-        return go_headers({"anthropic-version": "2023-06-01", **headers}, litellm_params, api_key, model)
+        return _go_headers_with_session({"anthropic-version": "2023-06-01", **headers}, litellm_params, api_key, model)
 
     def transform_request(
         self,
@@ -235,7 +258,7 @@ class OpenCodeGoGeminiChatConfig(_GoReportedCostMixin, GoogleAIStudioGeminiConfi
         if logging_obj is None:
             raise ValueError("OpenCode Go Gemini streaming requires the request logging context")
         iterator: Final = ModelResponseIterator(
-            streaming_response=streaming_response, sync_stream=sync_stream, logging_obj=logging_obj
+            streaming_response=streaming_response, sync_stream=sync_stream, json_mode=json_mode
         )
         return iter(iterator) if sync_stream else iterator
 
@@ -269,7 +292,7 @@ class OpenCodeGoGeminiChatConfig(_GoReportedCostMixin, GoogleAIStudioGeminiConfi
         api_base: str | None = None,
     ) -> dict[str, str]:  # mutable-ok: Gemini handler requires mutable string headers
         return TypeAdapter(dict[str, str]).validate_python(
-            go_headers(headers or {}, litellm_params, api_key if isinstance(api_key, str) else None, model)
+            _go_headers_with_session(headers or {}, litellm_params, api_key if isinstance(api_key, str) else None, model)
         )
 
     def transform_request(
