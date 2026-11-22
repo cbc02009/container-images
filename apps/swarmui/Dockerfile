@@ -18,6 +18,7 @@ RUN \
         git \
         libgl1 \
         libglib2.0-0 \
+        python3-pip \
         python3.11 \
         python3.11-dev \
         python3.11-venv \
