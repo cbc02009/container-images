@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # SwarmUI (https://github.com/mcmonkeyprojects/SwarmUI) — a self-hosted
-# Stable Diffusion Web UI, built from source at a tagged release and served
-# on port 7001.
+# Stable Diffusion Web UI, built from source at the ref given by VERSION
+# (a full commit SHA, or an upstream tag) and served on port 7001.
 
 # renovate: datasource=docker depName=mcr.microsoft.com/dotnet/sdk
 FROM mcr.microsoft.com/dotnet/sdk:9.0-bookworm-slim
@@ -27,7 +27,8 @@ RUN \
 
 RUN \
     git config --global --add safe.directory '*' \
-    && git clone --branch ${VERSION} --recurse-submodules --single-branch https://github.com/mcmonkeyprojects/SwarmUI.git /SwarmUI \
+    && git clone --recurse-submodules https://github.com/mcmonkeyprojects/SwarmUI.git /SwarmUI \
+    && git -C /SwarmUI checkout --detach ${VERSION} \
     && chown -R ${UID}:${UID} /SwarmUI
 
 EXPOSE 7001
