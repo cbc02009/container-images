@@ -17,7 +17,7 @@ ARG TRUENAS_MCP_GIT_IMAGE=alpine/git:v2.54.0@sha256:6a1fdb962814ca11508ca8d1bab9
 # renovate: datasource=docker depName=golang:1.27.4-alpine3.23
 ARG TRUENAS_MCP_BUILD_IMAGE=golang:1.27.4-alpine3.23@sha256:f70850ef6ce341e8b6427f677049145d63c0b7ce002d4d7e3d464828b1b96dcd
 # renovate: datasource=docker depName=gcr.io/distroless/static-debian12
-ARG TRUENAS_MCP_RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot@sha256:a080177c75e1a11b3b735a75c9e3c28591b862ba43f9f03e034d51f9051a0e70
+ARG TRUENAS_MCP_RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 
 FROM ${TRUENAS_MCP_GIT_IMAGE} AS source
 ARG VERSION
